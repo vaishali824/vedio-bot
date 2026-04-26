@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 import os
 
 app = Flask(__name__)
 
-@app.route("/health", methods=["GET"])
+@app.route("/")
+def home():
+    return jsonify({"status": "running", "message": "Temple Bot is Live!"})
+
+@app.route("/health")
 def health():
     return jsonify({"status": "running"})
 
-@app.route("/generate", methods=["POST"])
+@app.route("/generate", methods=["POST", "GET"])
 def generate():
     return jsonify({"status": "ok"})
 
