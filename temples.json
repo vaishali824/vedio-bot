@@ -1,0 +1,24 @@
+{
+  "temples": [
+    {"name": "Tirupati Balaji", "location": "Andhra Pradesh", "keyword": "tirupati temple"},
+    {"name": "Ram Mandir Ayodhya", "location": "Uttar Pradesh", "keyword": "ram mandir ayodhya"},
+    {"name": "Kedarnath Temple", "location": "Uttarakhand", "keyword": "kedarnath temple"},
+    {"name": "Somnath Temple", "location": "Gujarat", "keyword": "somnath temple"},
+    {"name": "Konark Sun Temple", "location": "Odisha", "keyword": "konark sun temple"},
+    {"name": "Jagannath Puri Temple", "location": "Odisha", "keyword": "jagannath puri"},
+    {"name": "Kashi Vishwanath", "location": "Varanasi", "keyword": "kashi vishwanath"},
+    {"name": "Meenakshi Temple", "location": "Madurai", "keyword": "meenakshi temple"},
+    {"name": "Brihadeeswarar Temple", "location": "Tamil Nadu", "keyword": "brihadeeswarar temple"},
+    {"name": "Padmanabhaswamy Temple", "location": "Kerala", "keyword": "padmanabhaswamy temple"},
+    {"name": "Angkor Wat", "location": "Cambodia", "keyword": "angkor wat temple"},
+    {"name": "Borobudur Temple", "location": "Indonesia", "keyword": "borobudur temple"},
+    {"name": "Vaishno Devi", "location": "Jammu Kashmir", "keyword": "vaishno devi temple"},
+    {"name": "Golden Temple", "location": "Amritsar", "keyword": "golden temple amritsar"},
+    {"name": "Dwarkadheesh Temple", "location": "Gujarat", "keyword": "dwarka temple"},
+    {"name": "Badrinath Temple", "location": "Uttarakhand", "keyword": "badrinath temple"},
+    {"name": "Lingaraja Temple", "location": "Odisha", "keyword": "lingaraja temple"},
+    {"name": "Sun Temple Modhera", "location": "Gujarat", "keyword": "modhera sun temple"},
+    {"name": "Ellora Caves Temple", "location": "Maharashtra", "keyword": "ellora caves kailasa"},
+    {"name": "Hampi Virupaksha", "location": "Karnataka", "keyword": "hampi virupaksha temple"}
+  ]
+}
