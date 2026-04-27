@@ -2,16 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install ffmpeg + system libs
+# Install system dependencies
 RUN apt-get update && apt-get install -y ffmpeg libgl1 && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip first
+RUN pip install --upgrade pip
 
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python deps
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python packages (force install)
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir moviepy
 
-# Copy project
+# Copy all files
 COPY . .
 
 # Run app
