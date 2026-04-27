@@ -1,6 +1,2 @@
-flask==2.3.3
-gTTS==2.5.1
-moviepy==1.0.3
-imageio
-imageio-ffmpeg
-numpy
+flask
+gTTS
