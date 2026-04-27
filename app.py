@@ -1,8 +1,7 @@
 from flask import Flask, request, send_file, jsonify
-import asyncio
 import os
 import requests
-import edge_tts
+from gtts import gTTS
 import subprocess
 import tempfile
 import uuid
@@ -12,15 +11,12 @@ app = Flask(__name__)
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
 # ─────────────────────────────────────────
-# 1. Generate Hindi Audio using Edge TTS
+# 1. Generate Hindi Audio using gTTS (Google)
 # ─────────────────────────────────────────
-async def generate_audio(script: str, output_path: str):
-    communicate = edge_tts.Communicate(
-        script,
-        voice="hi-IN-MadhurNeural",
-        rate="+5%"
-    )
-    await communicate.save(output_path)
+def generate_audio(script: str, output_path: str):
+    tts = gTTS(text=script, lang='hi', slow=False)
+    tts.save(output_path)
+    print("✅ Audio generated!")
 
 
 # ─────────────────────────────────────────
@@ -44,9 +40,9 @@ def download_pexels_video(keyword: str, output_path: str):
         videos = data.get("videos", [])
 
         if not videos:
+            print("⚠️ No Pexels videos found!")
             return False
 
-        # Get smallest video file
         video_files = sorted(
             videos[0]["video_files"],
             key=lambda x: x.get("width", 9999)
@@ -57,10 +53,11 @@ def download_pexels_video(keyword: str, output_path: str):
         with open(output_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
+        print("✅ Video downloaded!")
         return True
 
     except Exception as e:
-        print(f"Pexels error: {e}")
+        print(f"❌ Pexels error: {e}")
         return False
 
 
@@ -70,14 +67,14 @@ def download_pexels_video(keyword: str, output_path: str):
 def combine_video_audio(video_path: str, audio_path: str, output_path: str):
     cmd = [
         "ffmpeg", "-y",
-        "-stream_loop", "-1",   # loop video if shorter than audio
-        "-i", video_path,        # input video
-        "-i", audio_path,        # input audio
-        "-shortest",             # stop at shortest stream
-        "-c:v", "libx264",       # video codec
-        "-c:a", "aac",           # audio codec
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",  # YouTube Shorts size
-        "-r", "30",              # 30 fps
+        "-stream_loop", "-1",
+        "-i", video_path,
+        "-i", audio_path,
+        "-shortest",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+        "-r", "30",
         "-movflags", "+faststart",
         output_path
     ]
@@ -90,9 +87,9 @@ def combine_video_audio(video_path: str, audio_path: str, output_path: str):
     )
 
     if result.returncode != 0:
-        print(f"FFmpeg error: {result.stderr}")
         raise Exception(f"FFmpeg failed: {result.stderr}")
 
+    print("✅ Video combined!")
     return output_path
 
 
@@ -103,6 +100,10 @@ def combine_video_audio(video_path: str, audio_path: str, output_path: str):
 def generate_video():
     try:
         data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No data received"}), 400
+
         script = data.get("script", "")
         topic = data.get("topic", "health tips")
         title = data.get("title", "Health Tips")
@@ -110,9 +111,8 @@ def generate_video():
         if not script:
             return jsonify({"error": "No script provided"}), 400
 
-        print(f"\n🎬 Starting video: {title}")
+        print(f"\n🎬 Starting: {title}")
 
-        # Create unique temp directory
         tmpdir = tempfile.mkdtemp()
         unique_id = str(uuid.uuid4())[:8]
         audio_path = os.path.join(tmpdir, f"audio_{unique_id}.mp3")
@@ -121,16 +121,14 @@ def generate_video():
 
         # Step 1 — Generate Hindi Audio
         print("🎙️ Generating Hindi audio...")
-        asyncio.run(generate_audio(script, audio_path))
-        print("✅ Audio done!")
+        generate_audio(script, audio_path)
 
         # Step 2 — Download Pexels Video
-        print("🎬 Downloading Pexels video...")
+        print("🎬 Downloading video...")
         success = download_pexels_video(topic, video_path)
 
         if not success:
-            print("⚠️ Pexels failed, using fallback...")
-            # Create blank black video as fallback
+            print("⚠️ Using black fallback video...")
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "lavfi",
@@ -139,14 +137,11 @@ def generate_video():
                 video_path
             ], capture_output=True, timeout=60)
 
-        print("✅ Video downloaded!")
-
         # Step 3 — Combine with FFmpeg
         print("🎞️ Combining video + audio...")
         combine_video_audio(video_path, audio_path, output_path)
-        print("✅ Video ready!")
 
-        # Return the final video file
+        print("✅ Video ready! Sending to n8n...")
         return send_file(
             output_path,
             mimetype="video/mp4",
