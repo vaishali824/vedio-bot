@@ -1,13 +1,16 @@
 from flask import Flask, request, send_file, jsonify
-import os
 from gtts import gTTS
 import subprocess
+import uuid
+import os
 
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
     return jsonify({"status": "running"})
+
 
 @app.route("/merge", methods=["POST"])
 def merge():
@@ -20,20 +23,22 @@ def merge():
         if "video" not in request.files:
             return jsonify({"error": "No video uploaded"}), 400
 
-        # Save input video
+        # Unique file names (IMPORTANT for multiple requests)
+        uid = str(uuid.uuid4())
+
+        video_path = f"{uid}_input.mp4"
+        audio_path = f"{uid}_voice.mp3"
+        output_path = f"{uid}_output.mp4"
+
+        # Save video
         video_file = request.files["video"]
-        video_path = "input.mp4"
         video_file.save(video_path)
 
-        # Generate audio from text
-        audio_path = "voice.mp3"
+        # Generate Hindi voice
         tts = gTTS(text=script, lang="hi")
         tts.save(audio_path)
 
-        # Output video
-        output_path = "output.mp4"
-
-        # Merge video + audio using ffmpeg
+        # FFmpeg merge command
         command = [
             "ffmpeg",
             "-y",
@@ -47,7 +52,15 @@ def merge():
 
         subprocess.run(command, check=True)
 
-        return send_file(output_path, mimetype="video/mp4")
+        # Send final video
+        response = send_file(output_path, mimetype="video/mp4")
+
+        # Cleanup (optional but important)
+        os.remove(video_path)
+        os.remove(audio_path)
+        os.remove(output_path)
+
+        return response
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
