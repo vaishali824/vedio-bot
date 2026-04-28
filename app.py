@@ -7,34 +7,41 @@ import tempfile
 import uuid
 import traceback
 import time
-import hashlib
 
 app = Flask(__name__)
 
-# Environment variable for Pexels API
 PEXELS_API_KEY = os.environ.get("TXUuyk5yBjVYtB34k33VInB2gjbhnjI0DGmd5RwaU3H2rp1JYbtETY4c", "")
 
 
-# ---------- TTS CACHE + RETRY ----------
-def get_audio_filename(script):
-    return f"/tmp/{hashlib.md5(script.encode()).hexdigest()}.mp3"
-
-
+# ---------- SAFE TTS GENERATION ----------
 def generate_audio(script, audio_path):
     for i in range(5):
         try:
             print(f"TTS attempt {i+1}")
+
+            # remove old/broken file
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+
             tts = gTTS(text=script, lang='hi')
             tts.save(audio_path)
+
+            # check file size (important)
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+                raise Exception("Audio corrupted or too small")
+
+            print("Audio generated successfully")
             return True
+
         except Exception as e:
             print("TTS ERROR:", e)
-            time.sleep(20)  # wait before retry
+            time.sleep(20)
+
     return False
 
 
 # ---------- DOWNLOAD VIDEO ----------
-def download_pexels_video(keyword: str, output_path: str):
+def download_pexels_video(keyword, output_path):
     try:
         headers = {"Authorization": PEXELS_API_KEY}
         params = {
@@ -69,14 +76,15 @@ def download_pexels_video(keyword: str, output_path: str):
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
 
+        print("Video downloaded")
         return True
 
     except Exception as e:
-        print(f"Pexels error: {e}")
+        print("Pexels error:", e)
         return False
 
 
-# ---------- MERGE VIDEO + AUDIO ----------
+# ---------- MERGE ----------
 def combine_video_audio(video_path, audio_path, output_path):
     cmd = [
         "ffmpeg", "-y",
@@ -96,23 +104,24 @@ def combine_video_audio(video_path, audio_path, output_path):
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
     if result.returncode != 0:
-        raise Exception(f"FFmpeg error: {result.stderr}")
+        raise Exception(result.stderr)
 
-    return output_path
+    print("Video merged successfully")
 
 
 # ---------- MAIN API ----------
 @app.route("/generate", methods=["POST"])
 def generate_video():
     try:
+        print("STEP 1: Request received")
+
         data = request.get_json(force=True, silent=True)
-        print("Received:", data)
 
         if not data:
             return jsonify({"error": "No data received"}), 400
 
         script = str(data.get("script", ""))
-        topic = str(data.get("topic", "health tips"))
+        topic = str(data.get("topic", "health"))
 
         if not script:
             return jsonify({"error": "No script"}), 400
@@ -120,23 +129,27 @@ def generate_video():
         tmpdir = tempfile.mkdtemp()
         uid = str(uuid.uuid4())[:8]
 
+        audio_path = os.path.join(tmpdir, f"audio_{uid}.mp3")
         video_path = os.path.join(tmpdir, f"video_{uid}.mp4")
         output_path = os.path.join(tmpdir, f"final_{uid}.mp4")
 
         # ---------- AUDIO ----------
-        audio_path = get_audio_filename(script)
+        print("STEP 2: Generating audio")
+        success = generate_audio(script, audio_path)
 
-        if not os.path.exists(audio_path):
-            success = generate_audio(script, audio_path)
+        if not success:
+            return jsonify({"error": "TTS failed (rate limit)"}), 429
 
-            if not success:
-                return jsonify({"error": "TTS failed due to rate limit"}), 429
+        # safety check
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+            return jsonify({"error": "Invalid audio file"}), 500
 
         # ---------- VIDEO ----------
+        print("STEP 3: Downloading video")
         success = download_pexels_video(topic, video_path)
 
         if not success:
-            print("Using fallback black video...")
+            print("Using fallback video")
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "lavfi",
@@ -146,13 +159,16 @@ def generate_video():
             ], capture_output=True, timeout=60)
 
         # ---------- MERGE ----------
+        print("STEP 4: Merging video")
         combine_video_audio(video_path, audio_path, output_path)
+
+        print("STEP 5: Sending output")
 
         return send_file(
             output_path,
             mimetype="video/mp4",
             as_attachment=True,
-            download_name="health_video.mp4"
+            download_name="video.mp4"
         )
 
     except Exception as e:
@@ -161,7 +177,7 @@ def generate_video():
         return jsonify({"error": str(e)}), 500
 
 
-# ---------- HEALTH CHECK ----------
+# ---------- HEALTH ----------
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "running"})
@@ -170,7 +186,4 @@ def health():
 # ---------- HOME ----------
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({
-        "status": "running",
-        "message": "Hindi Health Video Bot!"
-    })
+    return jsonify({"status": "running", "message": "Video API working"})
