@@ -1,27 +1,47 @@
-from flask import Flask, request, send_file, jsonify
+
+ from flask import Flask, request, send_file, jsonify
 import os
 import requests
 import subprocess
 import tempfile
 import uuid
 import traceback
-import pyttsx3
 
 app = Flask(__name__)
 
 PEXELS_API_KEY = os.environ.get("TXUuyk5yBjVYtB34k33VInB2gjbhnjI0DGmd5RwaU3H2rp1JYbtETY4c", "")
 
-# ------------------ OFFLINE TTS ------------------
+# ------------------ TTS (WORKING VERSION) ------------------
 def generate_audio(script, audio_path):
     try:
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 150)
-        engine.save_to_file(script, audio_path)
-        engine.runAndWait()
+        # limit length (important)
+        script = script[:200]
 
-        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-            raise Exception("Audio generation failed")
+        url = "https://translate.google.com/translate_tts"
 
+        params = {
+            "ie": "UTF-8",
+            "q": script,
+            "tl": "hi",
+            "client": "tw-ob"
+        }
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        r = requests.get(url, params=params, headers=headers)
+
+        if r.status_code != 200:
+            raise Exception("TTS request failed")
+
+        with open(audio_path, "wb") as f:
+            f.write(r.content)
+
+        if os.path.getsize(audio_path) < 1000:
+            raise Exception("Audio too small")
+
+        print("TTS success")
         return True
 
     except Exception as e:
@@ -59,6 +79,7 @@ def download_video(keyword, output_path):
             for chunk in stream.iter_content(1024):
                 f.write(chunk)
 
+        print("Video downloaded")
         return True
 
     except Exception as e:
@@ -84,6 +105,8 @@ def merge(video_path, audio_path, output_path):
     if result.returncode != 0:
         raise Exception(result.stderr)
 
+    print("Merge success")
+
 
 # ------------------ API ------------------
 @app.route("/generate", methods=["POST"])
@@ -92,7 +115,7 @@ def generate():
         data = request.get_json()
 
         if not data:
-            return jsonify({"error": "No JSON"}), 400
+            return jsonify({"error": "No JSON received"}), 400
 
         script = data.get("script")
         topic = data.get("topic", "health")
@@ -107,14 +130,19 @@ def generate():
         video_path = os.path.join(tmp, f"v_{uid}.mp4")
         output_path = os.path.join(tmp, f"o_{uid}.mp4")
 
-        # AUDIO
+        # -------- AUDIO --------
+        print("Generating audio...")
         ok = generate_audio(script, audio_path)
+
         if not ok:
             return jsonify({"error": "TTS failed"}), 500
 
-        # VIDEO
+        # -------- VIDEO --------
+        print("Downloading video...")
         ok = download_video(topic, video_path)
+
         if not ok:
+            print("Using fallback video")
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "lavfi",
@@ -123,18 +151,27 @@ def generate():
                 video_path
             ])
 
-        # MERGE
+        # -------- MERGE --------
+        print("Merging...")
         merge(video_path, audio_path, output_path)
 
         return send_file(output_path, mimetype="video/mp4")
 
     except Exception as e:
+        print("ERROR:", e)
         return jsonify({
             "error": str(e),
             "trace": traceback.format_exc()
         }), 500
 
 
+# ------------------ HOME ------------------
 @app.route("/")
 def home():
     return jsonify({"status": "running"})
+
+
+# ------------------ START ------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
