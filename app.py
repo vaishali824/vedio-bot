@@ -12,27 +12,31 @@ app = Flask(__name__)
 
 PEXELS_API_KEY = os.environ.get("TXUuyk5yBjVYtB34k33VInB2gjbhnjI0DGmd5RwaU3H2rp1JYbtETY4c", "")
 
-# ------------------ TTS ------------------
+# ------------------ TTS (FIXED) ------------------
 def generate_audio(script, audio_path):
-    for i in range(3):
+    for i in range(5):
         try:
             print(f"TTS attempt {i+1}")
 
+            # remove old file
             if os.path.exists(audio_path):
                 os.remove(audio_path)
 
             tts = gTTS(text=script, lang='hi')
             tts.save(audio_path)
 
-            # validate file
+            # check file validity
             if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-                raise Exception("Audio file corrupted")
+                raise Exception("Audio corrupted")
 
+            print("TTS success")
             return True
 
         except Exception as e:
             print("TTS ERROR:", e)
-            time.sleep(15)
+
+            # 🔥 IMPORTANT DELAY (fix 429)
+            time.sleep(25)
 
     return False
 
@@ -68,6 +72,7 @@ def download_video(keyword, output_path):
             for chunk in stream.iter_content(1024):
                 f.write(chunk)
 
+        print("Video downloaded")
         return True
 
     except Exception as e:
@@ -93,11 +98,15 @@ def merge(video_path, audio_path, output_path):
     if result.returncode != 0:
         raise Exception(result.stderr)
 
+    print("Merge success")
+
 
 # ------------------ API ------------------
 @app.route("/generate", methods=["POST"])
 def generate():
     try:
+        print("Request received")
+
         data = request.get_json()
 
         if not data:
@@ -117,12 +126,19 @@ def generate():
         output_path = os.path.join(tmp, f"o_{uid}.mp4")
 
         # ---- AUDIO ----
+        print("Generating audio...")
         ok = generate_audio(script, audio_path)
         if not ok:
-            return jsonify({"error": "TTS failed"}), 500
+            return jsonify({"error": "TTS failed (rate limit)"}), 429
+
+        # safety check
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+            return jsonify({"error": "Invalid audio file"}), 500
 
         # ---- VIDEO ----
+        print("Downloading video...")
         ok = download_video(topic, video_path)
+
         if not ok:
             print("Using fallback video")
             subprocess.run([
@@ -134,7 +150,10 @@ def generate():
             ])
 
         # ---- MERGE ----
+        print("Merging...")
         merge(video_path, audio_path, output_path)
+
+        print("Sending file")
 
         return send_file(output_path, mimetype="video/mp4")
 
