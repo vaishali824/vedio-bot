@@ -9,7 +9,7 @@ import traceback
 
 app = Flask(__name__)
 
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+PEXELS_API_KEY = os.environ.get("TXUuyk5yBjVYtB34k33VInB2gjbhnjI0DGmd5RwaU3H2rp1JYbtETY4c", "")
 
 
 def download_pexels_video(keyword: str, output_path: str):
