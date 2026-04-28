@@ -1,7 +1,7 @@
-
- from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify
 import os
 import requests
+from gtts import gTTS  # keep import (not used now, safe to remove later)
 import subprocess
 import tempfile
 import uuid
@@ -11,21 +11,18 @@ app = Flask(__name__)
 
 PEXELS_API_KEY = os.environ.get("TXUuyk5yBjVYtB34k33VInB2gjbhnjI0DGmd5RwaU3H2rp1JYbtETY4c", "")
 
-# ------------------ TTS (WORKING VERSION) ------------------
+# ----------- FIXED TTS (NO gTTS LIMIT) -----------
 def generate_audio(script, audio_path):
     try:
-        # limit length (important)
-        script = script[:200]
+        script = script[:200]  # IMPORTANT limit
 
         url = "https://translate.google.com/translate_tts"
-
         params = {
             "ie": "UTF-8",
             "q": script,
             "tl": "hi",
             "client": "tw-ob"
         }
-
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
@@ -41,7 +38,7 @@ def generate_audio(script, audio_path):
         if os.path.getsize(audio_path) < 1000:
             raise Exception("Audio too small")
 
-        print("TTS success")
+        print("TTS OK")
         return True
 
     except Exception as e:
@@ -49,23 +46,23 @@ def generate_audio(script, audio_path):
         return False
 
 
-# ------------------ VIDEO ------------------
-def download_video(keyword, output_path):
+# ----------- VIDEO DOWNLOAD -----------
+def download_pexels_video(keyword: str, output_path: str):
     try:
-        if not PEXELS_API_KEY:
-            return False
-
         headers = {"Authorization": PEXELS_API_KEY}
-        params = {"query": keyword, "per_page": 1}
+        params = {
+            "query": keyword,
+            "per_page": 1
+        }
 
-        r = requests.get(
+        response = requests.get(
             "https://api.pexels.com/videos/search",
             headers=headers,
             params=params,
-            timeout=20
+            timeout=30
         )
 
-        data = r.json()
+        data = response.json()
         videos = data.get("videos", [])
 
         if not videos:
@@ -73,22 +70,22 @@ def download_video(keyword, output_path):
 
         video_url = videos[0]["video_files"][0]["link"]
 
-        stream = requests.get(video_url, stream=True)
+        r = requests.get(video_url, stream=True)
 
         with open(output_path, "wb") as f:
-            for chunk in stream.iter_content(1024):
+            for chunk in r.iter_content(8192):
                 f.write(chunk)
 
-        print("Video downloaded")
+        print("Video OK")
         return True
 
     except Exception as e:
-        print("VIDEO ERROR:", e)
+        print("Pexels error:", e)
         return False
 
 
-# ------------------ MERGE ------------------
-def merge(video_path, audio_path, output_path):
+# ----------- MERGE -----------
+def combine_video_audio(video_path, audio_path, output_path):
     cmd = [
         "ffmpeg", "-y",
         "-stream_loop", "-1",
@@ -105,44 +102,43 @@ def merge(video_path, audio_path, output_path):
     if result.returncode != 0:
         raise Exception(result.stderr)
 
-    print("Merge success")
+    print("Merge OK")
 
 
-# ------------------ API ------------------
+# ----------- MAIN API -----------
 @app.route("/generate", methods=["POST"])
-def generate():
+def generate_video():
     try:
         data = request.get_json()
 
         if not data:
-            return jsonify({"error": "No JSON received"}), 400
+            return jsonify({"error": "No data"}), 400
 
-        script = data.get("script")
-        topic = data.get("topic", "health")
+        script = str(data.get("script", ""))
+        topic = str(data.get("topic", "health"))
 
         if not script:
             return jsonify({"error": "No script"}), 400
 
-        tmp = tempfile.mkdtemp()
-        uid = str(uuid.uuid4())[:6]
+        tmpdir = tempfile.mkdtemp()
+        uid = str(uuid.uuid4())[:8]
 
-        audio_path = os.path.join(tmp, f"a_{uid}.mp3")
-        video_path = os.path.join(tmp, f"v_{uid}.mp4")
-        output_path = os.path.join(tmp, f"o_{uid}.mp4")
+        audio_path = os.path.join(tmpdir, f"audio_{uid}.mp3")
+        video_path = os.path.join(tmpdir, f"video_{uid}.mp4")
+        output_path = os.path.join(tmpdir, f"final_{uid}.mp4")
 
-        # -------- AUDIO --------
+        # AUDIO
         print("Generating audio...")
         ok = generate_audio(script, audio_path)
-
         if not ok:
             return jsonify({"error": "TTS failed"}), 500
 
-        # -------- VIDEO --------
+        # VIDEO
         print("Downloading video...")
-        ok = download_video(topic, video_path)
+        success = download_pexels_video(topic, video_path)
 
-        if not ok:
-            print("Using fallback video")
+        if not success:
+            print("Using fallback video...")
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "lavfi",
@@ -151,27 +147,20 @@ def generate():
                 video_path
             ])
 
-        # -------- MERGE --------
+        # MERGE
         print("Merging...")
-        merge(video_path, audio_path, output_path)
+        combine_video_audio(video_path, audio_path, output_path)
 
         return send_file(output_path, mimetype="video/mp4")
 
     except Exception as e:
-        print("ERROR:", e)
+        print("MAIN ERROR:", e)
         return jsonify({
             "error": str(e),
             "trace": traceback.format_exc()
         }), 500
 
 
-# ------------------ HOME ------------------
 @app.route("/")
 def home():
     return jsonify({"status": "running"})
-
-
-# ------------------ START ------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
